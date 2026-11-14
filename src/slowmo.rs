@@ -62,7 +62,7 @@ impl Plugin for SlowMoPlugin {
             .add_systems(OnExit(AppState::Battle), reset_on_exit)
             .add_systems(
                 Update,
-                (controls, detect_impact, record_hits, apply_speed, draw_contacts, indicator)
+                (controls, detect_impact, record_hits, apply_speed, indicator)
                     .chain()
                     .run_if(in_state(AppState::Battle)),
             );
@@ -79,8 +79,6 @@ pub struct SlowMo {
     cooldown: f32,
     /// Current playback speed (eased).
     speed: f32,
-    /// Closing speed of the last predicted impact.
-    impact_speed: f32,
     /// Recent blade hits: (point, push direction, impulse, game time).
     recent_hits: Vec<(Vec3, Vec3, f32, f32)>,
     focus: Focus,
@@ -103,7 +101,6 @@ impl Default for SlowMo {
             hold: 0.0,
             cooldown: 0.0,
             speed: 1.0,
-            impact_speed: 0.0,
             recent_hits: Vec::new(),
             focus: Focus::Midpoint,
             knock: Vec3::X,
@@ -137,9 +134,6 @@ impl SlowMo {
     /// Fully in slow motion (used by the screenshot autotest).
     pub fn is_slow(&self) -> bool {
         self.speed < SLOW_SPEED * 2.0
-    }
-    fn slowed(&self) -> bool {
-        self.paused || self.speed < 0.5
     }
 }
 
@@ -238,7 +232,6 @@ fn detect_impact(
     {
         slow.hold = HOLD;
         slow.cooldown = HOLD + COOLDOWN;
-        slow.impact_speed = closing;
         slow.focus = Focus::Point(edge_point);
         slow.knock = n;
         slow.contact_seen = false;
@@ -394,55 +387,6 @@ fn apply_speed(mut slow: ResMut<SlowMo>, real: Res<Time<Real>>, mut vtime: ResMu
     vtime.set_relative_speed(slow.speed);
 }
 
-/// Contact points (red), contact normals (yellow), velocities (green) and
-/// spin axes (white), drawn only while slowed or paused.
-fn draw_contacts(
-    slow: Res<SlowMo>,
-    mut gizmos: Gizmos,
-    graph: Res<ContactGraph>,
-    tops: Query<(Entity, &Top, &Position, &Rotation, &LinearVelocity, &AngularVelocity)>,
-) {
-    if !slow.slowed() {
-        return;
-    }
-    let bodies: Vec<Entity> = tops.iter().map(|t| t.0).collect();
-    for pair in graph.iter_active_touching() {
-        let (Some(b1), Some(b2)) = (pair.body1, pair.body2) else { continue };
-        if b1 == b2 || !bodies.contains(&b1) || !bodies.contains(&b2) {
-            continue;
-        }
-        for m in &pair.manifolds {
-            for c in &m.points {
-                gizmos.sphere(Isometry3d::from_translation(c.point), 0.03, Color::srgb(1.0, 0.1, 0.1));
-                let len = 0.25 + (c.normal_impulse * 2.0).min(0.6);
-                gizmos.arrow(c.point, c.point + m.normal * len, Color::srgb(1.0, 0.9, 0.1));
-            }
-        }
-    }
-    // Blade hits: a flash ring at the contact point and the push direction.
-    for &(p, dir, impulse, _) in &slow.recent_hits {
-        let orange = Color::srgb(1.0, 0.45, 0.05);
-        gizmos.sphere(Isometry3d::from_translation(p), 0.05 + impulse * 0.03, orange);
-        gizmos.arrow(p, p + dir * (0.3 + impulse * 0.35), orange);
-    }
-    for (_, top, pos, rot, lin, ang) in &tops {
-        let base = pos.0 + Vec3::Y * 0.6;
-        let v = Vec3::new(lin.0.x, 0.0, lin.0.z);
-        if v.length() > 0.05 {
-            gizmos.arrow(base, base + v * 0.25, Color::srgb(0.2, 1.0, 0.4));
-        }
-        let axis = rot.0 * Vec3::Y;
-        gizmos.line(pos.0, pos.0 + axis * 0.8, Color::WHITE);
-        // Spin ring: radius shows the outline, colour fades as spin drops.
-        let spin = (axial_spin(rot, ang).abs() / 200.0).min(1.0);
-        gizmos.circle(
-            Isometry3d::new(pos.0 + axis * 0.3, Quat::from_rotation_arc(Vec3::Z, axis)),
-            top.radius,
-            top.owner.accent().with_alpha(0.25 + 0.65 * spin),
-        );
-    }
-}
-
 fn indicator(slow: Res<SlowMo>, mut q: Query<&mut Text, With<Indicator>>) {
     let Ok(mut t) = q.single_mut() else { return };
     let auto = if slow.auto { "开" } else { "关" };
@@ -451,11 +395,7 @@ fn indicator(slow: Res<SlowMo>, mut q: Query<&mut Text, With<Indicator>>) {
     } else if let Some(caption) = &slow.caption {
         caption.clone()
     } else if slow.speed < 0.99 {
-        let src = if slow.manual { "手动" } else { "撞击预判" };
-        format!(
-            "慢动作 ×{:.2}（{src}，击飞方向侧视）   冲击速度 {:.1}   橙=刃击点与冲量  红/黄=本体接触  绿=速度",
-            slow.speed, slow.impact_speed
-        )
+        "慢动作".to_string()
     } else {
         format!("自动慢动作：{auto}（T 切换）")
     };
