@@ -1,0 +1,142 @@
+// 攻击环数据。修改后重新启动游戏即可生效，不需要重新编译。
+//
+// 坐标单位与游戏一致（陀螺半径约 0.45）。攻击环高度固定为 0.1。
+//
+// core:    中心环体。Cylinder(radius) 圆柱，或 Frustum(top, bottom) 上下半径不同的圆台。
+//          中心环体与配重盘、盖子合成一个平滑凸包参与碰撞。
+// blades:  刃片组。每片刃是独立的楔形碰撞体：
+//   count      片数（均匀分布）
+//   radius     刃片中心到轴心的距离
+//   length     刃片径向长度
+//   thickness  刃片宽度（沿旋转方向，底面）。宽而矮的刃 = 扁平的一片
+//   height     高度占攻击环高度的比例（默认 1.0）
+//   slope      刃面倾角（度）：正 = 刃面朝上，撞击时把对手往上掀（上挑）；
+//              0 = 竖直刃面，横向重击；负 = 刃面朝下，把对手往下压（压制）
+//   taper      刃尖宽度占刃根宽度的比例（默认 0.45，越小越尖；1 = 矩形）
+//   sweep      刃背弧线向后拖多长，占相邻两刃间距的比例（默认 0.55；0 = 纯楔形）。
+//              只影响外观：刃尖在前、弧形刃背在后，像真实攻击盘的爪形轮廓
+//   ability    特殊功能（默认 None）：
+//              Absorb  吸收：每次刃击夺取对手转速加到自己身上（对逆旋对手最强）
+//              Rebound 反弹：把撞击力加倍弹给对手，自己受到的反冲更小
+//              Cushion 缓冲：自己只吃到四成冲击，但打出去的力也变弱
+//   rake       后掠角（度）：刃片相对径向的偏转
+//   phase      起始角度偏移（度）
+//   material   Plastic / Metal / Rubber
+// inserts: 嵌入的配重块（只提供质量，不参与碰撞），用来调整质量分布。
+// air_drag:   风阻系数（刃片越多越大），影响掉速。
+//
+// 每个攻击环的刃片总数建议不超过 12，否则物理计算变慢。
+
+[
+    (
+        name: "冲锋刃",
+        desc: "三片后掠大刃，竖直刃面，攻击力强",
+        color: (0.85, 0.15, 0.12),
+        air_drag: 1.3,
+        core: Cylinder(radius: 0.27),
+        blades: [
+            (count: 3, radius: 0.34, length: 0.2, thickness: 0.2, height: 0.45, rake: 34.0),
+        ],
+    ),
+    (
+        name: "守护环",
+        desc: "圆润斜面外环，没有刃片，撞击时把对方卸开",
+        color: (0.15, 0.45, 0.9),
+        air_drag: 0.8,
+        core: Frustum(top: 0.36, bottom: 0.46),
+    ),
+    (
+        name: "风暴六翼",
+        desc: "六片小翼，均衡，但风阻较大",
+        color: (0.1, 0.75, 0.45),
+        air_drag: 1.6,
+        core: Cylinder(radius: 0.3),
+        blades: [
+            (count: 6, radius: 0.36, length: 0.15, thickness: 0.13, height: 0.4, rake: 46.0, slope: 10.0),
+        ],
+    ),
+    (
+        name: "重锤双翼",
+        desc: "两块金属重锤，惯量极大但质量不对称，会晃动",
+        color: (0.6, 0.3, 0.85),
+        air_drag: 1.2,
+        core: Cylinder(radius: 0.27),
+        blades: [
+            (count: 2, radius: 0.35, length: 0.17, thickness: 0.28, height: 0.6, taper: 0.8, material: Metal),
+        ],
+    ),
+    (
+        name: "升龙刃",
+        desc: "刃面上倾 38°：把对手往上掀离地面，反作用力把自己压紧",
+        color: (0.95, 0.6, 0.1),
+        air_drag: 1.3,
+        core: Cylinder(radius: 0.26),
+        blades: [
+            (count: 3, radius: 0.34, length: 0.2, thickness: 0.24, height: 0.5, slope: 38.0, rake: 20.0),
+        ],
+    ),
+    (
+        name: "重击刃",
+        desc: "四片竖直刃，刃尖嵌金属块：横向猛击把对手撞飞",
+        color: (0.85, 0.85, 0.2),
+        air_drag: 1.4,
+        core: Cylinder(radius: 0.26),
+        blades: [
+            (count: 4, radius: 0.35, length: 0.19, thickness: 0.17, height: 0.5, rake: 10.0),
+        ],
+        inserts: [
+            (count: 4, radius: 0.41, size: (0.05, 0.05, 0.1), phase: 0.0),
+        ],
+    ),
+    (
+        name: "镇压刃",
+        desc: "刃面下倾 25°：把对手压向斗盘，反作用力让自己略微上浮",
+        color: (0.3, 0.3, 0.35),
+        air_drag: 1.25,
+        core: Cylinder(radius: 0.27),
+        blades: [
+            (count: 3, radius: 0.35, length: 0.2, thickness: 0.16, height: 0.45, slope: -25.0, rake: 15.0),
+        ],
+    ),
+    (
+        name: "噬旋爪",
+        desc: "三片橡胶吸收爪：每次刃击夺取对手转速，对逆旋对手效果最强",
+        color: (0.3, 0.12, 0.45),
+        air_drag: 1.2,
+        core: Cylinder(radius: 0.28),
+        blades: [
+            (count: 3, radius: 0.35, length: 0.18, thickness: 0.22, height: 0.5, rake: 25.0, taper: 0.6, sweep: 0.8, material: Rubber, ability: Absorb),
+        ],
+    ),
+    (
+        name: "回弹盾",
+        desc: "四片弹簧反弹刃：把撞击力加倍弹回对手，自己后退更少",
+        color: (0.08, 0.38, 0.5),
+        air_drag: 1.35,
+        core: Cylinder(radius: 0.28),
+        blades: [
+            (count: 4, radius: 0.36, length: 0.16, thickness: 0.2, height: 0.5, taper: 0.75, sweep: 0.35, ability: Rebound),
+        ],
+    ),
+    (
+        name: "缓冲轮",
+        desc: "六块橡胶缓冲垫：吃下大部分冲击，很难被撞飞，但攻击力弱",
+        color: (0.12, 0.35, 0.18),
+        air_drag: 1.1,
+        core: Cylinder(radius: 0.31),
+        blades: [
+            (count: 6, radius: 0.37, length: 0.12, thickness: 0.2, height: 0.6, taper: 0.9, sweep: 0.9, material: Rubber, ability: Cushion),
+        ],
+    ),
+    (
+        name: "攻守双极",
+        desc: "两片金属重击刃 + 两块缓冲垫：一半进攻一半卸力",
+        color: (0.75, 0.2, 0.45),
+        air_drag: 1.3,
+        core: Cylinder(radius: 0.27),
+        blades: [
+            (count: 2, radius: 0.35, length: 0.19, thickness: 0.18, height: 0.5, rake: 18.0, material: Metal),
+            (count: 2, radius: 0.35, length: 0.14, thickness: 0.24, height: 0.6, taper: 0.9, sweep: 0.8, phase: 90.0, material: Rubber, ability: Cushion),
+        ],
+    ),
+]
